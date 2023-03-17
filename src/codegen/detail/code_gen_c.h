@@ -378,7 +378,7 @@ template <class Stream> void CodeGenC<Stream>::visit(const ReduceTo &op) {
 }
 
 template <class Stream> void CodeGenC<Stream>::visit(const IntConst &op) {
-    this->os() << std::to_string(op->val_);
+    this->os() << std::to_string(op->val_) << "l";
 }
 
 template <class Stream> void CodeGenC<Stream>::visit(const FloatConst &op) {

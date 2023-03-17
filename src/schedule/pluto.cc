@@ -480,6 +480,8 @@ plutoFuseImpl(Stmt ast, const ID &loop0Id, const ID &loop1Id, int _nestLevel0,
                     // later dimensions first, so the first half would be
                     // target, and second half being source
                     auto hSet = flattenMapToSet(std::move(hMap));
+                    // overapproximate to allow coefficients on strided dependences
+                    hSet = isl_set_remove_unknown_divs(hSet.move());
                     auto strSet = toString(std::move(hSet));
 
                     std::lock_guard l(m);
