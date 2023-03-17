@@ -21,9 +21,8 @@ ALLOC:      '@!alloc';
 FREE:       '@!free';
 
 // ReduceTo
-ATOMIC:     '@!atomic';
+SYNC:       '@!sync';
 PLUSEQ:     '+=';
-SUBEQ:      '-=';
 STAREQ:     '*=';
 MINEQ:      '@!min=';
 MAXEQ:      '@!max=';
@@ -41,8 +40,11 @@ PREFERLIBS: '@!prefer_libs';
 TRUE:       'true';
 FALSE:      'false';
 
-// expr
+// Special Stmt
 EVAL:       '@!eval';
+MARK_VERSION:   '@!mark_version';
+
+// Special Expr
 FLOOR:      '@!floor';
 CEIL:       '@!ceil';
 ROUNDTO0:   '@!towards0';
@@ -50,12 +52,16 @@ MAX:        '@!max';
 MIN:        '@!min';
 SQRT:       '@!sqrt';
 EXP:        '@!exp';
+LN:         '@!ln';
 SQUARE:     '@!square';
 ABS:        '@!abs';
 SIGMOID:    '@!sigmoid';
 TANH:       '@!tanh';
 INTRINSIC:  '@!intrinsic';
 SIDE_EFFECT:    '@!side_effect';
+LOAD_AT_VERSION:    '@!load_at_version';
+
+// Func
 CLOSURE:    '@!closure';
 
 

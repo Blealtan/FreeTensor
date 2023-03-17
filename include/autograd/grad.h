@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include <analyze/symbol_table.h>
+#include <autograd/user_grad.h>
 #include <func.h>
 #include <hash.h>
 #include <mutator.h>
@@ -100,6 +101,25 @@ class ReplaceBySaved : public Mutator {
     Expr visit(const Load &op) override;
 };
 
+class ReplaceLoadAtVersion : public Mutator {
+    const SymbolTableInterface &symbolTable_;
+    const std::unordered_map<ID, std::string> &intermediatesMap_;
+    const std::unordered_map<std::string, std::pair<std::string, Expr>>
+        &userVersions_;
+
+  public:
+    ReplaceLoadAtVersion(
+        const SymbolTableInterface &symbolTable,
+        const std::unordered_map<ID, std::string> &intermediatesMap,
+        const std::unordered_map<std::string, std::pair<std::string, Expr>>
+            &userVersions)
+        : symbolTable_(symbolTable), intermediatesMap_(intermediatesMap),
+          userVersions_(userVersions) {}
+
+  protected:
+    Expr visit(const LoadAtVersion &op) override;
+};
+
 class GradExpr : public Visitor {
     const std::unordered_map<std::string, std::string>
         &gradNames_;                           // x -> dy/dx
@@ -112,7 +132,7 @@ class GradExpr : public Visitor {
   public:
     GradExpr(ReplaceBySaved &replaceByTape,
              const std::unordered_map<std::string, std::string> &gradNames,
-             const Expr &root, const Expr &grad, const Expr &equLoad)
+             const Expr &root, const Expr &grad, const Expr &equLoad = nullptr)
         : gradNames_(gradNames), root_(root), equLoad_(equLoad),
           replaceByTape_(replaceByTape) {
         gradExprs_[root] = grad;
@@ -122,7 +142,8 @@ class GradExpr : public Visitor {
 
   private:
     Expr replaceByLoadY(const Expr &op) {
-        return HashComparator()(op, root_) ? equLoad_ : op;
+        return equLoad_.isValid() && HashComparator()(op, root_) ? equLoad_
+                                                                 : op;
     }
 
     Expr useForwardVal(const Expr &_op) {
@@ -145,10 +166,12 @@ class GradExpr : public Visitor {
     void visit(const IfExpr &op) override;
     void visit(const Sqrt &op) override;
     void visit(const Exp &op) override;
+    void visit(const Ln &op) override;
     void visit(const Square &op) override;
     void visit(const Sigmoid &op) override;
     void visit(const Tanh &op) override;
     void visit(const Abs &op) override;
+    void visit(const Intrinsic &op) override;
 };
 
 template <class BaseClass> class RenewIDs : public BaseClass {
@@ -174,9 +197,12 @@ class Grad : public RenewIDs<SymbolTable<Mutator>> {
         &intermediatesMap_; // All saved variables, including in forward stage
                             // (tapes) and backward stage (during recomputation)
     const std::unordered_map<StmtOrExprID, Expr> &versions_;
+    const std::unordered_map<std::string, std::pair<std::string, Expr>>
+        &userVersions_;
     const std::unordered_map<ID, Expr> &totLens_;
     const std::unordered_set<ID> &saveLocalStmts_;
     const std::unordered_set<Stmt> &notSingleWrite_;
+    std::vector<RangeToUserGrad> userGrads_; // mutable
 
     std::unordered_map<std::string, std::string> requireGrads_; // var name map
     std::unordered_map<std::string, std::string> provideGrads_; // var name map
@@ -187,6 +213,9 @@ class Grad : public RenewIDs<SymbolTable<Mutator>> {
     std::unordered_map<std::string, std::unordered_set<Stmt>>
         recomputed_; // var name -> set{stmt}
     bool isRecompute_ = false;
+
+    std::optional<RangeToUserGrad> userGradOpen_;
+    ID userGradInsertPos_;
 
   private:
     /**
@@ -199,6 +228,8 @@ class Grad : public RenewIDs<SymbolTable<Mutator>> {
      */
     ReplaceBySaved getReplacer(const Stmt &stmt) const;
 
+    Stmt doVisitStmt(const Stmt &s);
+
   public:
     Grad(const std::unordered_set<std::string> &_requires,
          const std::unordered_set<std::string> &provides,
@@ -206,13 +237,17 @@ class Grad : public RenewIDs<SymbolTable<Mutator>> {
          const std::unordered_set<ID> &affectedDefs,
          const std::unordered_map<ID, std::string> &intermediatesMap,
          const std::unordered_map<StmtOrExprID, Expr> &versions,
+         const std::unordered_map<std::string, std::pair<std::string, Expr>>
+             &userVersions,
          const std::unordered_map<ID, Expr> &totLens,
          const std::unordered_set<ID> &saveLocalStmts,
-         const std::unordered_set<Stmt> &notSingleWrite)
+         const std::unordered_set<Stmt> &notSingleWrite,
+         const std::vector<RangeToUserGrad> &userGrads)
         : requires_(_requires), provides_(provides), tapes_(tapes),
           affectedDefs_(affectedDefs), intermediatesMap_(intermediatesMap),
-          versions_(versions), totLens_(totLens),
-          saveLocalStmts_(saveLocalStmts), notSingleWrite_(notSingleWrite) {}
+          versions_(versions), userVersions_(userVersions), totLens_(totLens),
+          saveLocalStmts_(saveLocalStmts), notSingleWrite_(notSingleWrite),
+          userGrads_(userGrads) {}
 
     const std::unordered_map<std::string, std::string> &requireGrads() const {
         return requireGrads_;
@@ -222,6 +257,7 @@ class Grad : public RenewIDs<SymbolTable<Mutator>> {
     }
 
   protected:
+    Stmt visitStmt(const Stmt &s) override;
     Stmt visit(const StmtSeq &op) override;
     Stmt visit(const For &op) override;
     Stmt visit(const If &op) override;
@@ -245,6 +281,9 @@ class Grad : public RenewIDs<SymbolTable<Mutator>> {
  * to pass taped tensors from the forward function to the backward function in
  * implicit I/O parameters, i.e. in closure. False to pass these tensors as
  * explicit I/O parameters. Default to true
+ * @param userGrads : For custom gradients. Each `StmtSetToUserGrad` item in the
+ * list specifies a statement range in the original program, which should be
+ * replaced by a backward statement
  * @return : (
  *  Forward AST
  *  Backward AST,
@@ -261,14 +300,16 @@ std::tuple<Stmt, Stmt, std::unordered_map<std::string, std::string>,
            std::unordered_map<ID, std::string>>
 gradBody(const Stmt &op, const std::unordered_set<std::string> &_requires,
          const std::unordered_set<std::string> &provides,
-         const std::unordered_set<ID> &tapes);
+         const std::unordered_set<ID> &tapes,
+         const std::vector<StmtSetToUserGrad> &userGrads = {});
 
 std::tuple<Func, Func, std::unordered_map<std::string, std::string>,
            std::unordered_map<std::string, std::string>>
 gradFuncInplace(const Func &func,
                 const std::unordered_set<std::string> &_requires,
                 const std::unordered_set<std::string> &provides,
-                const std::unordered_set<ID> &tapes, bool tapeInClosure = true);
+                const std::unordered_set<ID> &tapes, bool tapeInClosure = true,
+                const std::vector<StmtSetToUserGrad> &userGrads = {});
 
 std::tuple<Func, Func, std::unordered_map<std::string, std::string>,
            std::unordered_map<std::string, std::string>>
@@ -276,7 +317,8 @@ gradFuncOutOfPlace(const Func &func,
                    const std::unordered_set<std::string> &_requires,
                    const std::unordered_set<std::string> &provides,
                    const std::unordered_set<ID> &tapes,
-                   bool tapeInClosure = true);
+                   bool tapeInClosure = true,
+                   const std::vector<StmtSetToUserGrad> &userGrads = {});
 /** @} */
 
 enum class GradTapeMode : int { All, Nothing, NoReuseOnly };
@@ -297,6 +339,9 @@ enum class GradTapeMode : int { All, Nothing, NoReuseOnly };
  * to pass taped tensors from the forward function to the backward function in
  * implicit I/O parameters, i.e. in closure. False to pass these tensors as
  * explicit I/O parameters. Default to true
+ * @param userGrads : For custom gradients. Each `StmtSetToUserGrad` item in the
+ * list specifies a statement range in the original program, which should be
+ * replaced by a backward statement
  * @return : (
  *  Forward AST
  *  Backward AST,
@@ -313,7 +358,8 @@ std::tuple<Stmt, Stmt, std::unordered_map<std::string, std::string>,
            std::unordered_map<ID, std::string>>
 gradBody(const Stmt &op, const std::unordered_set<std::string> &_requires,
          const std::unordered_set<std::string> &provides,
-         GradTapeMode tapeMode = GradTapeMode::NoReuseOnly);
+         GradTapeMode tapeMode = GradTapeMode::NoReuseOnly,
+         const std::vector<StmtSetToUserGrad> &userGrads = {});
 
 std::tuple<Func, Func, std::unordered_map<std::string, std::string>,
            std::unordered_map<std::string, std::string>>
@@ -321,7 +367,8 @@ gradFuncInplace(const Func &func,
                 const std::unordered_set<std::string> &_requires,
                 const std::unordered_set<std::string> &provides,
                 GradTapeMode tapeMode = GradTapeMode::NoReuseOnly,
-                bool tapeInClosure = true);
+                bool tapeInClosure = true,
+                const std::vector<StmtSetToUserGrad> &userGrads = {});
 
 std::tuple<Func, Func, std::unordered_map<std::string, std::string>,
            std::unordered_map<std::string, std::string>>
@@ -329,7 +376,8 @@ gradFuncOutOfPlace(const Func &func,
                    const std::unordered_set<std::string> &_requires,
                    const std::unordered_set<std::string> &provides,
                    GradTapeMode tapeMode = GradTapeMode::NoReuseOnly,
-                   bool tapeInClosure = true);
+                   bool tapeInClosure = true,
+                   const std::vector<StmtSetToUserGrad> &userGrads = {});
 /** @} */
 
 } // namespace freetensor

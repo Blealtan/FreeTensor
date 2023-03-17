@@ -52,6 +52,7 @@ void init_ffi_ast(py::module_ &m) {
         .value("LNot", ASTNodeType::LNot)
         .value("Sqrt", ASTNodeType::Sqrt)
         .value("Exp", ASTNodeType::Exp)
+        .value("Ln", ASTNodeType::Ln)
         .value("Square", ASTNodeType::Square)
         .value("Sigmoid", ASTNodeType::Sigmoid)
         .value("Tanh", ASTNodeType::Tanh)
@@ -65,7 +66,9 @@ void init_ffi_ast(py::module_ &m) {
         .value("Assert", ASTNodeType::Assert)
         .value("Assume", ASTNodeType::Assume)
         .value("Intrinsic", ASTNodeType::Intrinsic)
-        .value("Eval", ASTNodeType::Eval);
+        .value("Eval", ASTNodeType::Eval)
+        .value("MarkVersion", ASTNodeType::MarkVersion)
+        .value("LoadAtVersion", ASTNodeType::LoadAtVersion);
 
     py::class_<ASTNode, AST> pyAST(m, "AST");
     py::class_<FuncNode, Func>(m, "Func", pyAST);
@@ -181,6 +184,7 @@ template <> struct polymorphic_type_hook<freetensor::ASTNode> {
             DISPATCH(LNot);
             DISPATCH(Sqrt);
             DISPATCH(Exp);
+            DISPATCH(Ln);
             DISPATCH(Square);
             DISPATCH(Sigmoid);
             DISPATCH(Tanh);
@@ -190,6 +194,8 @@ template <> struct polymorphic_type_hook<freetensor::ASTNode> {
             DISPATCH(IfExpr);
             DISPATCH(Cast);
             DISPATCH(Intrinsic);
+            DISPATCH(MarkVersion);
+            DISPATCH(LoadAtVersion);
         default:
             ERROR("Unexpected AST node type");
         }
@@ -220,6 +226,7 @@ template <> struct polymorphic_type_hook<freetensor::StmtNode> {
             DISPATCH(Assume);
             DISPATCH(Eval);
             DISPATCH(Any);
+            DISPATCH(MarkVersion);
         default:
             ERROR("Unexpected Stmt node type");
         }
@@ -265,6 +272,7 @@ template <> struct polymorphic_type_hook<freetensor::ExprNode> {
             DISPATCH(LNot);
             DISPATCH(Sqrt);
             DISPATCH(Exp);
+            DISPATCH(Ln);
             DISPATCH(Square);
             DISPATCH(Sigmoid);
             DISPATCH(Tanh);
@@ -275,6 +283,7 @@ template <> struct polymorphic_type_hook<freetensor::ExprNode> {
             DISPATCH(Cast);
             DISPATCH(Intrinsic);
             DISPATCH(AnyExpr);
+            DISPATCH(LoadAtVersion);
         default:
             ERROR("Unexpected Expr node type");
         }

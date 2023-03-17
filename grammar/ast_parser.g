@@ -46,9 +46,9 @@ atype returns [AccessType type]
     ;
 
 dtype returns [DataType type]
-    : SimpleVar
+    : var
       {
-        $type = parseDType($SimpleVar.text);
+        $type = parseDType($var.name);
       }
     ;
 
@@ -200,6 +200,10 @@ stmtWithoutID returns [Stmt node]
       {
         $node = makeEval($expr.node);
       }
+    | MARK_VERSION '(' tapeName=var COMMA varName=var ')'
+      {
+        $node = makeMarkVersion($tapeName.name, $varName.name);
+      }
     | LBRACE RBRACE
       {
         $node = makeStmtSeq({});
@@ -214,10 +218,6 @@ reduceOp returns [ReduceOp op]
     : PLUSEQ
       {
         $op = ReduceOp::Add;
-      }
-    | SUBEQ
-      {
-        $op = ReduceOp::Sub;
       }
     | STAREQ
       {
@@ -242,7 +242,7 @@ reduceOp returns [ReduceOp op]
     ;
 
 storeOrReduceTo returns [Stmt node]
-    : ATOMIC var indices reduceOp expr
+    : SYNC var indices reduceOp expr
       {
         $node = makeReduceTo($var.name, $indices.exprs, $reduceOp.op, $expr.node, true);
       }
@@ -264,8 +264,14 @@ load returns [Expr node]
       { std::optional<DataType> optDType; }
       (':' dtype { optDType = $dtype.type; })?
       {
-        if (!optDType.has_value())
-            optDType = name2dtype_.at($var.name);
+        if (!optDType.has_value()) {
+            if (auto &&it = name2dtype_.find($var.name); it != name2dtype_.end()) {
+                optDType = name2dtype_.at($var.name);
+            } else {
+                throw ParserError("Symbol " + $var.name + " not found when parsing. If you intend "
+                    "to parse a sub-tree of an AST, plase set `dtype_in_load=True` when serializing it");
+            }
+        }
         $node = makeLoad($var.name, $indices.exprs, optDType.value());
       }
     ;
@@ -414,6 +420,10 @@ expr returns [Expr node]
       {
         $node = makeExp($expr.node);
       }
+    | LN '(' expr ')'
+      {
+        $node = makeLn($expr.node);
+      }
     | ABS '(' expr ')'
       {
         $node = makeAbs($expr.node);
@@ -530,6 +540,10 @@ expr returns [Expr node]
         ')'
       {
         $node = makeIntrinsic(slice($String.text, 1, -1), std::move(params), $dtype.type, hasSideEffect);
+      }
+    | LOAD_AT_VERSION '(' tapeName=var COMMA indices COMMA dtype ')'
+      {
+        $node = makeLoadAtVersion($tapeName.name, $indices.exprs, $dtype.type);
       }
     ;
 

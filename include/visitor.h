@@ -184,6 +184,8 @@ class Visitor {
 
     virtual void visit(const Exp &op) { (*this)(op->expr_); }
 
+    virtual void visit(const Ln &op) { (*this)(op->expr_); }
+
     virtual void visit(const Square &op) { (*this)(op->expr_); }
 
     virtual void visit(const Sigmoid &op) { (*this)(op->expr_); }
@@ -262,6 +264,14 @@ class Visitor {
         (*this)(op->stridec_);
         (*this)(op->batchSize_);
         (*this)(op->equivalent_);
+    }
+
+    virtual void visit(const MarkVersion &op) {}
+
+    virtual void visit(const LoadAtVersion &op) {
+        for (auto &&idx : op->indices_) {
+            (*this)(idx);
+        }
     }
 };
 

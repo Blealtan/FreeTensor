@@ -108,10 +108,10 @@ class Mutator {
             indices.emplace_back((*this)(index));
         }
         auto &&expr = (*this)(op->expr_);
-        return COPY_DEBUG_INFO(
-            makeReduceTo(op->var_, std::move(indices), op->op_, std::move(expr),
-                         op->atomic_, op->metadata(), op->id()),
-            op);
+        return COPY_DEBUG_INFO(makeReduceTo(op->var_, std::move(indices),
+                                            op->op_, std::move(expr), op->sync_,
+                                            op->metadata(), op->id()),
+                               op);
     }
 
     virtual Expr visit(const AnyExpr &op) {
@@ -237,6 +237,10 @@ class Mutator {
         return COPY_DEBUG_INFO(makeExp((*this)(op->expr_)), op);
     }
 
+    virtual Expr visit(const Ln &op) {
+        return COPY_DEBUG_INFO(makeLn((*this)(op->expr_)), op);
+    }
+
     virtual Expr visit(const Square &op) {
         return COPY_DEBUG_INFO(makeSquare((*this)(op->expr_)), op);
     }
@@ -354,6 +358,23 @@ class Mutator {
                        (*this)(op->stridec_), (*this)(op->batchSize_),
                        op->aIsRowMajor_, op->bIsRowMajor_, op->cIsRowMajor_,
                        (*this)(op->equivalent_), op->metadata(), op->id()),
+            op);
+    }
+
+    virtual Stmt visit(const MarkVersion &op) {
+        return COPY_DEBUG_INFO(
+            makeMarkVersion(op->tapeName_, op->var_, op->metadata(), op->id()),
+            op);
+    }
+
+    virtual Expr visit(const LoadAtVersion &op) {
+        std::vector<Expr> indices;
+        indices.reserve(op->indices_.size());
+        for (auto &&index : op->indices_) {
+            indices.emplace_back((*this)(index));
+        }
+        return COPY_DEBUG_INFO(
+            makeLoadAtVersion(op->tapeName_, std::move(indices), op->loadType_),
             op);
     }
 };

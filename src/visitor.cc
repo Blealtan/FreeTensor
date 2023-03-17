@@ -37,6 +37,7 @@ void Visitor::visitExpr(const Expr &op) {
         DISPATCH_EXPR_CASE(LNot);
         DISPATCH_EXPR_CASE(Sqrt);
         DISPATCH_EXPR_CASE(Exp);
+        DISPATCH_EXPR_CASE(Ln);
         DISPATCH_EXPR_CASE(Square);
         DISPATCH_EXPR_CASE(Sigmoid);
         DISPATCH_EXPR_CASE(Tanh);
@@ -47,6 +48,7 @@ void Visitor::visitExpr(const Expr &op) {
         DISPATCH_EXPR_CASE(Cast);
         DISPATCH_EXPR_CASE(Intrinsic);
         DISPATCH_EXPR_CASE(AnyExpr);
+        DISPATCH_EXPR_CASE(LoadAtVersion);
 
     default:
         ERROR("Unexpected AST node type");
@@ -73,6 +75,7 @@ void Visitor::visitStmt(const Stmt &op) {
         DISPATCH_STMT_CASE(Eval);
         DISPATCH_STMT_CASE(MatMul);
         DISPATCH_STMT_CASE(Any);
+        DISPATCH_STMT_CASE(MarkVersion);
 
     default:
         ERROR("Unexpected AST node type");
